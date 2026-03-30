@@ -17,11 +17,18 @@ const api = new WooCommerceRestApi({
   version: 'wc/v3',
 });
 
-// List products
+// List products (with pagination and search)
 app.get('/products', async (req, res) => {
   try {
-    const { data } = await api.get('products');
-    res.json(data);
+    const { page = 1, per_page = 20, search = '' } = req.query;
+    const params = { page, per_page };
+    if (search) params.search = search;
+    const response = await api.get('products', params);
+    res.json({
+      products: response.data,
+      total: response.headers['x-wp-total'],
+      totalPages: response.headers['x-wp-totalpages'],
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
