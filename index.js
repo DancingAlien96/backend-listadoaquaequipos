@@ -33,6 +33,13 @@ mongoose.connect(process.env.MONGO_URI)
       await User.create({ username: 'admin', password: bcrypt.hashSync('admin123', 10), role: 'admin' });
       console.log('Usuario admin creado por defecto');
     }
+    // Migración: asignar rol a usuarios que no lo tienen
+    const sinRol = await User.countDocuments({ role: { $exists: false } });
+    if (sinRol > 0) {
+      await User.updateMany({ role: { $exists: false }, username: 'admin' }, { $set: { role: 'admin' } });
+      await User.updateMany({ role: { $exists: false } }, { $set: { role: 'secretaria' } });
+      console.log(`Migración: ${sinRol} usuario(s) actualizados con rol`);
+    }
   })
   .catch(err => console.error('Error conectando MongoDB:', err));
 
