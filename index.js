@@ -5,6 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const multer = require('multer');
 const WooCommerceRestApi = require('@woocommerce/woocommerce-rest-api').default;
 
 const app = express();
@@ -111,6 +112,35 @@ app.delete('/auth/users/:id', authMiddleware, adminMiddleware, async (req, res) 
     if (count === 1) return res.status(400).json({ error: 'No puedes eliminar el único usuario' });
     await User.findByIdAndDelete(req.params.id);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Media upload ──────────────────────────────────────────────
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.post('/media', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+    const wpUsername = process.env.WP_USERNAME;
+    const wpAppPassword = process.env.WP_APP_PASSWORD;
+    if (!wpUsername || !wpAppPassword) {
+      return res.status(500).json({ error: 'Credenciales de WordPress no configuradas (WP_USERNAME / WP_APP_PASSWORD)' });
+    }
+    const auth = Buffer.from(`${wpUsername}:${wpAppPassword}`).toString('base64');
+    const response = await fetch(`${process.env.WOOCOMMERCE_URL}/wp-json/wp/v2/media`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Disposition': `attachment; filename="${req.file.originalname}"`,
+        'Content-Type': req.file.mimetype,
+      },
+      body: req.file.buffer,
+    });
+    const data = await response.json();
+    if (!response.ok) return res.status(500).json({ error: data.message || 'Error subiendo imagen a WordPress' });
+    res.json({ url: data.source_url });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
