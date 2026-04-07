@@ -58,37 +58,54 @@ const authMiddleware = (req, res, next) => {
 
 // Login
 app.post('/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Faltan campos' });
-  const user = await User.findOne({ username });
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Faltan campos' });
+    const user = await User.findOne({ username });
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+    }
+    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
+    res.json({ token, username: user.username });
+  } catch (err) {
+    console.error('Login error:', err.message);
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
-  const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
-  res.json({ token, username: user.username });
 });
 
 // Get users
 app.get('/auth/users', authMiddleware, async (req, res) => {
-  const users = await User.find({}, '_id username');
-  res.json(users.map(u => ({ id: u._id, username: u.username })));
+  try {
+    const users = await User.find({}, '_id username');
+    res.json(users.map(u => ({ id: u._id, username: u.username })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Create user
 app.post('/auth/users', authMiddleware, async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Faltan campos' });
-  if (await User.findOne({ username })) return res.status(400).json({ error: 'Usuario ya existe' });
-  const user = await User.create({ username, password: bcrypt.hashSync(password, 10) });
-  res.json({ id: user._id, username: user.username });
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Faltan campos' });
+    if (await User.findOne({ username })) return res.status(400).json({ error: 'Usuario ya existe' });
+    const user = await User.create({ username, password: bcrypt.hashSync(password, 10) });
+    res.json({ id: user._id, username: user.username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Delete user
 app.delete('/auth/users/:id', authMiddleware, async (req, res) => {
-  const count = await User.countDocuments();
-  if (count === 1) return res.status(400).json({ error: 'No puedes eliminar el único usuario' });
-  await User.findByIdAndDelete(req.params.id);
-  res.json({ success: true });
+  try {
+    const count = await User.countDocuments();
+    if (count === 1) return res.status(400).json({ error: 'No puedes eliminar el único usuario' });
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Product routes (protected) ────────────────────────────────
