@@ -29,7 +29,7 @@ mongoose.connect(process.env.MONGO_URI)
     // Crear usuario admin por defecto si no existe ninguno
     const count = await User.countDocuments();
     if (count === 0) {
-      await User.create({ username: 'admin', password: bcrypt.hashSync('admin123', 10) });
+      await User.create({ username: 'admin', password: bcrypt.hashSync('admin123', 10), role: 'admin' });
       console.log('Usuario admin creado por defecto');
     }
   })
@@ -39,6 +39,7 @@ mongoose.connect(process.env.MONGO_URI)
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  role: { type: String, enum: ['admin', 'secretaria'], default: 'secretaria' },
 });
 const User = mongoose.model('User', UserSchema);
 
@@ -65,39 +66,46 @@ app.post('/auth/login', async (req, res) => {
     if (!user || !bcrypt.compareSync(password, user.password)) {
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
-    const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
-    res.json({ token, username: user.username });
+    const token = jwt.sign({ id: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
+    res.json({ token, username: user.username, role: user.role });
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
+// Admin-only middleware
+const adminMiddleware = (req, res, next) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden gestionar usuarios' });
+  next();
+};
+
 // Get users
-app.get('/auth/users', authMiddleware, async (req, res) => {
+app.get('/auth/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const users = await User.find({}, '_id username');
-    res.json(users.map(u => ({ id: u._id, username: u.username })));
+    const users = await User.find({}, '_id username role');
+    res.json(users.map(u => ({ id: u._id, username: u.username, role: u.role })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Create user
-app.post('/auth/users', authMiddleware, async (req, res) => {
+app.post('/auth/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, role } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Faltan campos' });
     if (await User.findOne({ username })) return res.status(400).json({ error: 'Usuario ya existe' });
-    const user = await User.create({ username, password: bcrypt.hashSync(password, 10) });
-    res.json({ id: user._id, username: user.username });
+    const validRole = ['admin', 'secretaria'].includes(role) ? role : 'secretaria';
+    const user = await User.create({ username, password: bcrypt.hashSync(password, 10), role: validRole });
+    res.json({ id: user._id, username: user.username, role: user.role });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Delete user
-app.delete('/auth/users/:id', authMiddleware, async (req, res) => {
+app.delete('/auth/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const count = await User.countDocuments();
     if (count === 1) return res.status(400).json({ error: 'No puedes eliminar el único usuario' });
